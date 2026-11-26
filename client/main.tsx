@@ -25,7 +25,7 @@ const course = 'AP Computer Science Principles'
 const timeFormat = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 
 function Brand() {
-  return <div className="brand"><span className="monogram" aria-hidden="true">AP</span> AP Practice</div>
+  return <div className="brand"><span className="monogram" aria-hidden="true">AP</span> Advanced AP</div>
 }
 
 function SiteHeader({ children }: { children?: ReactNode }) {

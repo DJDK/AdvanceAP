@@ -14,7 +14,7 @@ app.useGlobalFilters(new HttpErrorFilter())
 app.enableShutdownHooks()
 try {
   await app.listen(Number(API_PORT), '127.0.0.1')
-  console.log(`AP Practice API listening at http://127.0.0.1:${API_PORT}`)
+  console.log(`Advanced AP API listening at http://127.0.0.1:${API_PORT}`)
 } catch (error) {
   await app.close()
   throw error

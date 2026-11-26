@@ -1,4 +1,4 @@
-# AP Practice
+# Advanced AP
 
 A local React and Vite frontend written in TypeScript, a NestJS 11 REST API on Node.js and TypeScript 7.0, and a MongoDB attempt store. Students sign in through Auth0 Universal Login.
 
