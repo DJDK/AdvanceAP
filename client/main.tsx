@@ -1,14 +1,25 @@
 import { Auth0Provider, useAuth0 } from '@auth0/auth0-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import type { MouseEvent, ReactNode } from 'react'
+import type { Account, ActiveAttempt, Api, Attempt, AttemptSummary, ExamSummary, SubmittedAttempt } from './api'
+import { errorMessage } from './api'
 import { createRoot } from 'react-dom/client'
-import { Admin } from './admin.jsx'
-import { authCache } from './auth-cache.js'
-import { TestCatalog } from './catalog.jsx'
-import { TopicFeedback } from './topic-feedback.jsx'
-import { Profile, SkillCheck } from './profile.jsx'
+import { Admin } from './admin'
+import { authCache } from './auth-cache'
+import { TestCatalog } from './catalog'
+import { TopicFeedback } from './topic-feedback'
+import { Profile, SkillCheck } from './profile'
 import './styles.css'
 
 const { VITE_AUTH0_DOMAIN: domain, VITE_AUTH0_CLIENT_ID: clientId, VITE_AUTH0_AUDIENCE: audience } = import.meta.env
+class ApiError extends Error {
+  constructor(message: string, readonly status: number, readonly value: unknown) {
+    super(message)
+  }
+}
+
+type OpenAttempt = (ActiveAttempt & { receivedTime: number }) | SubmittedAttempt
+
 const sessionTimeoutSeconds = 8
 const course = 'AP Computer Science Principles'
 const timeFormat = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' })
@@ -17,11 +28,11 @@ function Brand() {
   return <div className="brand"><span className="monogram" aria-hidden="true">AP</span> AP Practice</div>
 }
 
-function SiteHeader({ children }) {
+function SiteHeader({ children }: { children?: ReactNode }) {
   return <><a className="skip-link" href="#main-content">Skip to content</a><header className="site-header"><div className="bar"><Brand />{children}</div></header></>
 }
 
-function SignInPanel({ children }) {
+function SignInPanel({ children }: { children?: ReactNode }) {
   return (
     <section className="welcome">
       <div className="welcome-main">
@@ -45,12 +56,12 @@ function App() {
   const [authError, setAuthError] = useState('')
   const [sessionTimedOut, setSessionTimedOut] = useState(false)
   const [sessionNeedsSignIn, setSessionNeedsSignIn] = useState(false)
-  const [account, setAccount] = useState(null)
+  const [account, setAccount] = useState<Account | null>(null)
   const [accountError, setAccountError] = useState('')
   const [path, setPath] = useState(() => window.location.pathname)
   const adminPage = path === '/admin' || path === '/admin/'
   const profilePage = path === '/profile' || path === '/profile/'
-  const api = useCallback(async (path, options) => {
+  const api: Api = useCallback(async <Response,>(path: string, options?: RequestInit): Promise<Response> => {
     let token
     try {
       token = await getAccessTokenSilently({ timeoutInSeconds: sessionTimeoutSeconds })
@@ -59,16 +70,22 @@ function App() {
       setSessionNeedsSignIn(true)
       throw new Error('Your session could not be renewed. Sign in again to continue.')
     }
+    const headers = new Headers(options?.headers)
+    headers.set('Authorization', `Bearer ${token}`)
     const response = await fetch(`/api${path}`, {
       ...options,
-      headers: { Authorization: `Bearer ${token}`, ...options?.headers },
+      headers,
       signal: AbortSignal.timeout(12000),
     })
     if (response.status === 401) setSessionNeedsSignIn(true)
-    const value = response.status === 204 ? null : await response.json().catch(() => null)
-    if (!response.ok) throw Object.assign(new Error(value?.message ?? 'The request could not be completed.'), { value })
+    const value: unknown = response.status === 204 ? null : await response.json().catch(() => null)
+    if (!response.ok) {
+      const message = value && typeof value === 'object' && 'message' in value && typeof value.message === 'string'
+        ? value.message : 'The request could not be completed.'
+      throw new ApiError(message, response.status, value)
+    }
     if (response.status !== 204 && value === null) throw new Error('The API returned an unexpected response.')
-    return value
+    return value as Response
   }, [getAccessTokenSilently])
 
   useEffect(() => {
@@ -80,7 +97,7 @@ function App() {
   function signIn() {
     setAuthError('')
     loginWithRedirect({ appState: { returnTo: adminPage ? '/admin' : profilePage ? '/profile' : '/' } })
-      .catch(err => setAuthError(err.message))
+      .catch(err => setAuthError(errorMessage(err)))
   }
 
   useEffect(() => {
@@ -89,7 +106,7 @@ function App() {
     return () => window.removeEventListener('popstate', onPop)
   }, [])
 
-  function navigate(event) {
+  function navigate(event: MouseEvent<HTMLAnchorElement>) {
     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
     event.preventDefault()
     const path = event.currentTarget.pathname
@@ -100,10 +117,10 @@ function App() {
   useEffect(() => {
     if (!isAuthenticated) return
     let current = true
-    api('/me').then(profile => {
+    api<Account>('/me').then(profile => {
       if (current) setAccount(profile)
     }).catch(err => {
-      if (current) setAccountError(err.message)
+      if (current) setAccountError(errorMessage(err))
     })
     return () => { current = false }
   }, [api, isAuthenticated])
@@ -145,11 +162,11 @@ function App() {
   )
 }
 
-function Student({ api }) {
-  const [exams, setExams] = useState(null)
+function Student({ api }: { api: Api }) {
+  const [exams, setExams] = useState<ExamSummary[] | null>(null)
   const [filters, setFilters] = useState({ courseId: '', query: '' })
-  const [history, setHistory] = useState(null)
-  const [attempt, setAttempt] = useState(null)
+  const [history, setHistory] = useState<AttemptSummary[] | null>(null)
+  const [attempt, setAttempt] = useState<OpenAttempt | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const lock = useRef(false)
@@ -157,29 +174,29 @@ function Student({ api }) {
   const load = useCallback(async () => {
     setError('')
     try {
-      const [details, rows] = await Promise.all([api('/exams'), api('/attempts')])
+      const [details, rows] = await Promise.all([api<ExamSummary[]>('/exams'), api<AttemptSummary[]>('/attempts')])
       setExams(details)
       setHistory(rows)
     } catch (err) {
-      setError(err.message)
+      setError(errorMessage(err))
     }
   }, [api])
 
   useEffect(() => { void load() }, [load])
 
-  async function open(path, method, selection) {
+  async function open(path: string, method: 'GET' | 'POST', selection?: string) {
     if (lock.current) return
     lock.current = true
     setBusy(true)
     setError('')
     try {
-      const next = await api(path, {
+      const next = await api<Attempt>(path, {
         method,
         ...(selection && { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ examId: selection }) }),
       })
-      setAttempt({ ...next, receivedTime: performance.now() })
+      setAttempt(next.status === 'active' ? { ...next, receivedTime: performance.now() } : next)
     } catch (err) {
-      setError(err.message)
+      setError(errorMessage(err))
     } finally {
       lock.current = false
       setBusy(false)
@@ -194,7 +211,7 @@ function Student({ api }) {
   if (attempt?.status === 'active') {
     return <Exam key={attempt.id} api={api} attempt={attempt} onComplete={setAttempt} onExit={dashboard} />
   }
-  if (attempt?.result) return <Results attempt={attempt} onBack={dashboard} />
+  if (attempt?.result) return <Results attempt={attempt} result={attempt.result} onBack={dashboard} />
 
   const active = new Map(history?.filter(row => row.status === 'active').map(row => [row.examId, row]))
 
@@ -217,7 +234,7 @@ function Student({ api }) {
                 <time dateTime={row.startedAt}>{timeFormat.format(new Date(row.startedAt))}</time>
                 <span className="attempt-score">
                   {row.result && row.result.rawScore === row.result.total && <SkillCheck label="Perfect test score" />}
-                  {row.status === 'active' ? 'In progress' : `Raw score ${row.result.rawScore}/${row.result.total} · Estimated AP score ${row.result.estimatedScore}/5`}
+                  {row.status === 'active' ? 'In progress' : row.result && `Raw score ${row.result.rawScore}/${row.result.total} · Estimated AP score ${row.result.estimatedScore}/5`}
                 </span></div>
               <button className="secondary" disabled={busy} onClick={() => open(`/attempts/${row.id}`, 'GET')}>
                 {row.status === 'active' ? 'Resume exam' : 'View score'}
@@ -229,8 +246,12 @@ function Student({ api }) {
   )
 }
 
-function Results({ attempt, onBack }) {
-  const { rawScore, total, estimatedScore, topicFeedback, incompleteQuestions } = attempt.result
+function Results({ attempt, result, onBack }: {
+  attempt: SubmittedAttempt
+  result: NonNullable<SubmittedAttempt['result']>
+  onBack: () => void
+}) {
+  const { rawScore, total, estimatedScore, topicFeedback, incompleteQuestions } = result
   return (
     <section className="result-card">
       <h1>Exam results</h1>
@@ -241,29 +262,29 @@ function Results({ attempt, onBack }) {
         <div><dt>Estimated AP score</dt><dd>{estimatedScore}<small> / 5</small></dd></div>
       </dl>
       <p className="note">The estimate uses practice cutoffs for the multiple-choice section. Official AP scoring depends on the course and exam sections.</p>
-      {topicFeedback?.length > 0 && <TopicFeedback topics={topicFeedback} incomplete={incompleteQuestions} />}
+      {!!topicFeedback?.length && <TopicFeedback topics={topicFeedback} incomplete={incompleteQuestions ?? 0} />}
       <button className="primary" onClick={onBack}>Back to dashboard</button>
     </section>
   )
 }
 
-function formatTime(seconds) {
+function formatTime(seconds: number) {
   const hours = Math.floor(seconds / 3600)
   const minutes = Math.floor((seconds % 3600) / 60)
   const rest = String(seconds % 60).padStart(2, '0')
   return hours ? `${hours}:${String(minutes).padStart(2, '0')}:${rest}` : `${minutes}:${rest}`
 }
 
-function readReviewMarks(attemptId) {
+function readReviewMarks(attemptId: string): string[] {
   try {
-    const marks = JSON.parse(sessionStorage.getItem(`ap-practice:review:${attemptId}`))
-    return Array.isArray(marks) ? marks : []
+    const marks: unknown = JSON.parse(sessionStorage.getItem(`ap-practice:review:${attemptId}`) ?? '[]')
+    return Array.isArray(marks) ? marks.filter(mark => typeof mark === 'string') : []
   } catch {
     return []
   }
 }
 
-function QuestionPrompt({ prompt }) {
+function QuestionPrompt({ prompt }: { prompt: string }) {
   const divider = prompt.indexOf('\n\n')
   const code = divider < 0 ? '' : prompt.slice(divider + 2)
   const hasCode = /^(?:[\w]+ ←|(?:int|double|boolean|String|ArrayList|class|for|while|PROCEDURE)\b)/.test(code)
@@ -273,7 +294,12 @@ function QuestionPrompt({ prompt }) {
   </div>
 }
 
-function Exam({ api, attempt, onComplete, onExit }) {
+function Exam({ api, attempt, onComplete, onExit }: {
+  api: Api
+  attempt: ActiveAttempt & { receivedTime: number }
+  onComplete: (attempt: SubmittedAttempt) => void
+  onExit: () => void
+}) {
   const { id, questions } = attempt
   const [answers, setAnswers] = useState(attempt.answers)
   const [index, setIndex] = useState(() => Math.max(0, questions.findIndex(q => (attempt.answers[q.id]?.length ?? 0) < q.select)))
@@ -284,7 +310,7 @@ function Exam({ api, attempt, onComplete, onExit }) {
   const [marked, setMarked] = useState(() => readReviewMarks(id))
   const lock = useRef(false)
   const nextCheck = useRef(0)
-  const heading = useRef(null)
+  const heading = useRef<HTMLHeadingElement>(null)
   const seconds = Math.max(0, Math.ceil((Date.parse(attempt.expiresAt) - Date.parse(attempt.serverTime)
     - (now - attempt.receivedTime)) / 1000))
   const question = questions[index]
@@ -312,17 +338,17 @@ function Exam({ api, attempt, onComplete, onExit }) {
     nextCheck.current = now + 3000
     lock.current = true
     setBusy('checking')
-    api(`/attempts/${id}`).then(next => {
+    api<Attempt>(`/attempts/${id}`).then(next => {
       if (next.status === 'submitted') onComplete(next)
     }).catch(err => {
-      setError(`Could not load your result. Retrying automatically. ${err.message}`)
+      setError(`Could not load your result. Retrying automatically. ${errorMessage(err)}`)
     }).finally(() => {
       lock.current = false
       setBusy('')
     })
   }, [api, id, now, onComplete, seconds])
 
-  async function save(option) {
+  async function save(option: number) {
     if (lock.current || seconds === 0) return
     const updated = selected.includes(option) ? selected.filter(item => item !== option)
       : question.select === 1 ? [option] : [...selected, option]
@@ -332,15 +358,18 @@ function Exam({ api, attempt, onComplete, onExit }) {
     setError('')
     setAnswers(current => ({ ...current, [question.id]: updated }))
     try {
-      await api(`/attempts/${id}/answers/${question.id}`, {
+      await api<null>(`/attempts/${id}/answers/${question.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ selected: updated }),
       })
     } catch (err) {
-      if (err.value?.status === 'submitted') return onComplete(err.value)
+      if (err instanceof ApiError && err.status === 409) {
+        const attempt = err.value as Attempt | null
+        if (attempt?.status === 'submitted') return onComplete(attempt)
+      }
       try {
-        const latest = await api(`/attempts/${id}`)
+        const latest = await api<Attempt>(`/attempts/${id}`)
         if (latest.status === 'submitted') return onComplete(latest)
         setAnswers(latest.answers)
         setError('The save could not be confirmed. Check your selection and try again if needed.')
@@ -360,16 +389,17 @@ function Exam({ api, attempt, onComplete, onExit }) {
     setBusy('submitting')
     setError('')
     try {
-      onComplete(await api(`/attempts/${id}/submit`, { method: 'POST' }))
+      const next = await api<Attempt>(`/attempts/${id}/submit`, { method: 'POST' })
+      if (next.status === 'submitted') onComplete(next)
     } catch (err) {
-      setError(err.message)
+      setError(errorMessage(err))
     } finally {
       lock.current = false
       setBusy('')
     }
   }
 
-  function jump(target) {
+  function jump(target: number) {
     setReview(false)
     setIndex(target)
   }
@@ -460,11 +490,14 @@ function Exam({ api, attempt, onComplete, onExit }) {
   )
 }
 
-createRoot(document.getElementById('root')).render(domain && clientId && audience
+const root = document.getElementById('root')
+if (!root) throw new Error('The app root element is missing.')
+
+createRoot(root).render(domain && clientId && audience
   ? <Auth0Provider domain={domain} clientId={clientId} authorizationParams={{ redirect_uri: window.location.origin, audience }}
       cache={authCache} useRefreshTokens useRefreshTokensFallback={false} httpTimeoutInSeconds={sessionTimeoutSeconds}
       onRedirectCallback={state => {
-        const returnTo = ['/admin', '/profile'].includes(state?.returnTo) ? state.returnTo : '/'
+        const returnTo = state?.returnTo === '/admin' || state?.returnTo === '/profile' ? state.returnTo : '/'
         window.history.replaceState({}, '', returnTo)
         window.dispatchEvent(new PopStateEvent('popstate'))
       }}>

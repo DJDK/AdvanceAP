@@ -1,19 +1,27 @@
 import { useEffect, useId, useState } from 'react'
 
-export function CoursePicker({ courses, value, onChange }) {
+import type { KeyboardEvent } from 'react'
+import type { Course } from './api'
+
+export function CoursePicker({ courses, value, onChange }: {
+  courses: Course[]
+  value: string
+  onChange: (id: string) => void
+}) {
   const id = useId()
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [active, setActive] = useState(-1)
   const selected = courses.find(course => course.id === value)
   const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean)
-  const groups = new Map()
+  const groups = new Map<string, Course[]>()
   for (const course of courses) {
     const subject = course.official ? course.subject : 'Legacy courses'
     const text = course.name.toLowerCase()
     if (!terms.every(term => text.includes(term))) continue
-    if (!groups.has(subject)) groups.set(subject, [])
-    groups.get(subject).push(course)
+    const group = groups.get(subject)
+    if (group) group.push(course)
+    else groups.set(subject, [course])
   }
   const options = [...groups.values()].flat()
   const activeOption = open ? options[active] : undefined
@@ -29,12 +37,12 @@ export function CoursePicker({ courses, value, onChange }) {
     setActive(-1)
   }
 
-  function choose(course) {
+  function choose(course: Course) {
     onChange(course.id)
     close()
   }
 
-  function handleKey(event) {
+  function handleKey(event: KeyboardEvent<HTMLInputElement>) {
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       event.preventDefault()
       setOpen(true)

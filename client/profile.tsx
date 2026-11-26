@@ -1,13 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
 
+import type { Api, ProfileCourse, ProfileSkill } from './api'
+import { errorMessage } from './api'
+
 const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' })
 
-export function SkillCheck({ label = 'All correct' }) {
+export function SkillCheck({ label = 'All correct' }: { label?: string }) {
   return <span className="skill-check"><span aria-hidden="true">✓</span><span className="sr-only">{label}</span></span>
 }
 
-export function Profile({ api, name }) {
-  const [courses, setCourses] = useState(null)
+export function Profile({ api, name }: { api: Api; name?: string }) {
+  const [courses, setCourses] = useState<ProfileCourse[] | null>(null)
   const [error, setError] = useState('')
   const [retry, setRetry] = useState(0)
   const [search, setSearch] = useState('')
@@ -30,10 +33,10 @@ export function Profile({ api, name }) {
 
   useEffect(() => {
     let current = true
-    api('/profile').then(profile => {
+    api<{ courses: ProfileCourse[] }>('/profile').then(profile => {
       if (current) setCourses(profile.courses)
     }).catch(err => {
-      if (current) setError(err.message)
+      if (current) setError(errorMessage(err))
     })
     return () => { current = false }
   }, [api, retry])
@@ -52,7 +55,7 @@ export function Profile({ api, name }) {
       }}>Try again</button></p>
         : !courses && <p role="status">Loading skills…</p>}
       {courses?.length === 0 && <p>No course skills are available yet.</p>}
-      {courses?.length > 0 && <>
+      {!!courses?.length && <>
         <div className="profile-filters">
           <label className="catalog-search">
             Search skills
@@ -79,18 +82,23 @@ export function Profile({ api, name }) {
   )
 }
 
-function CourseSkills({ course, skills, filterKey }) {
-  const details = useRef(null)
+function CourseSkills({ course, skills, filterKey }: {
+  course: ProfileCourse
+  skills: ProfileSkill[]
+  filterKey: string
+}) {
+  const details = useRef<HTMLDetailsElement>(null)
   useEffect(() => {
-    if (filterKey) details.current.open = true
+    if (filterKey && details.current) details.current.open = true
   }, [filterKey])
 
   const checked = course.skills.filter(skill => skill.latest?.mastered).length
-  const groups = new Map()
+  const groups = new Map<string, ProfileSkill[]>()
   for (const skill of skills) {
     const group = skill.bigIdea ?? ''
-    if (!groups.has(group)) groups.set(group, [])
-    groups.get(group).push(skill)
+    const members = groups.get(group)
+    if (members) members.push(skill)
+    else groups.set(group, [skill])
   }
 
   return (

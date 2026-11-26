@@ -1,10 +1,12 @@
+import type { ICache } from '@auth0/auth0-react'
+
 // Auth0 tokens survive a reload in this tab and are cleared when its session storage ends.
 const prefix = 'ap-practice:auth0:'
-const memory = new Map()
+const memory = new Map<string, unknown>()
 
-export const authCache = {
-  get(key) {
-    if (memory.has(key)) return memory.get(key)
+export const authCache: ICache = {
+  get<T>(key: string): T | undefined {
+    if (memory.has(key)) return memory.get(key) as T
     try {
       const entry = window.sessionStorage.getItem(prefix + key)
       return entry === null ? undefined : JSON.parse(entry)
@@ -13,7 +15,7 @@ export const authCache = {
     }
   },
 
-  set(key, entry) {
+  set<T>(key: string, entry: T) {
     try {
       window.sessionStorage.setItem(prefix + key, JSON.stringify(entry))
       memory.delete(key)

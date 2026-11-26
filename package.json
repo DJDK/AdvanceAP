@@ -8,10 +8,11 @@
   "scripts": {
     "dev": "vite --strictPort",
     "api": "npm run build:server && node --enable-source-maps --env-file=.env server/.build/main.js",
-    "build": "npm run build:server && vite build",
+    "build": "npm run build:server && npm run typecheck:client && vite build",
     "test": "npm run build:server && node --test \"server/.build/exams/*.test.js\"",
     "build:server": "tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit && npm run typecheck:client",
+    "typecheck:client": "tsc -p client/tsconfig.json"
   },
   "dependencies": {
     "@auth0/auth0-react": "^2.5.0",
@@ -29,6 +30,8 @@
   "devDependencies": {
     "@types/express": "^5.0.6",
     "@types/node": "^22.20.5",
+    "@types/react": "^19.3.3",
+    "@types/react-dom": "^19.3.0",
     "typescript": "~7.0.2",
     "vite": "^7.1.0"
   }

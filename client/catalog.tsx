@@ -1,23 +1,40 @@
+import type { Dispatch, SetStateAction } from 'react'
+import type { AttemptSummary, ExamSummary } from './api'
+
+interface Filters {
+  query: string
+  courseId: string
+}
+
 const uncategorized = 'Uncategorized'
 
-function groupTests(exams) {
-  const groups = new Map()
+function groupTests(exams: ExamSummary[]) {
+  const groups = new Map<string, { key: string; label: string; exams: ExamSummary[] }>()
   for (const exam of exams) {
     const label = exam.courseName || uncategorized
     const key = exam.courseId || 'uncategorized'
-    if (!groups.has(key)) groups.set(key, { key, label, exams: [] })
-    groups.get(key).exams.push(exam)
+    const group = groups.get(key)
+    if (group) group.exams.push(exam)
+    else groups.set(key, { key, label, exams: [exam] })
   }
   return [...groups.values()].sort((a, b) => a.label.localeCompare(b.label))
 }
 
-function durationLabel(seconds) {
+function durationLabel(seconds: number) {
   const minutes = Math.floor(seconds / 60)
   const remaining = seconds % 60
   return [minutes && `${minutes} min`, remaining && `${remaining} sec`].filter(Boolean).join(' ')
 }
 
-export function TestCatalog({ exams, active, busy, loading, filters, setFilters, onOpen }) {
+export function TestCatalog({ exams, active, busy, loading, filters, setFilters, onOpen }: {
+  exams: ExamSummary[] | null
+  active: ReadonlyMap<string, AttemptSummary>
+  busy: boolean
+  loading: boolean
+  filters: Filters
+  setFilters: Dispatch<SetStateAction<Filters>>
+  onOpen: (exam: ExamSummary) => void
+}) {
   const { query, courseId } = filters
   const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean)
   const groups = groupTests(exams ?? [])

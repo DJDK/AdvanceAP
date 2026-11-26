@@ -1,6 +1,6 @@
 # AP Practice
 
-A local React and Vite frontend, a NestJS 11 REST API on Node.js and TypeScript 7.0, and a MongoDB attempt store. Students sign in through Auth0 Universal Login.
+A local React and Vite frontend written in TypeScript, a NestJS 11 REST API on Node.js and TypeScript 7.0, and a MongoDB attempt store. Students sign in through Auth0 Universal Login.
 
 The first form simulates the full AP Computer Science Principles multiple-choice section. It has 70 original questions, including a five-question reading set and eight questions that require two selections. The default time is 120 minutes. The official exam also includes a separate Create performance task and written responses. [College Board exam format](https://apcentral.collegeboard.org/courses/ap-computer-science-principles/exam)
 
@@ -81,7 +81,7 @@ Open [http://localhost:5173](http://localhost:5173). The frontend proxies `/api`
 4. For the timeout path, set `EXAM_DURATION_SECONDS=60`, restart the API, and start a **new** attempt. Let it expire. You can also close the tab after saving an answer, then reopen it after the deadline and view the result in Recent attempts.
 5. Sign in as a different Auth0 user and check that the previous user's attempts are absent.
 
-Run `npm run typecheck` to check the server and `npm test` for the bank and scoring tests. `npm run api` compiles the server before starting it. `npm run build` compiles both the server and the frontend. The public health endpoint at `/api/health` checks the database connection.
+Run `npm run typecheck` to check both the server and client, `npm run typecheck:client` to check just the client, and `npm test` for the bank and scoring tests. `npm run api` compiles the server before starting it. `npm run build` compiles both the server and the frontend. The public health endpoint at `/api/health` checks the database connection.
 
 ## Server structure
 

@@ -1,10 +1,12 @@
-import { SkillCheck } from './profile.jsx'
+import { SkillCheck } from './profile'
 
-function accuracy(topic) {
+import type { TopicPerformance } from './api'
+
+function accuracy(topic: TopicPerformance) {
   return topic.correct / (topic.correct + topic.incorrect)
 }
 
-export function TopicFeedback({ topics, incomplete }) {
+export function TopicFeedback({ topics, incomplete }: { topics: TopicPerformance[]; incomplete: number }) {
   const priorities = topics.filter(topic => topic.incorrect > 0)
     .sort((a, b) => accuracy(a) - accuracy(b) || b.incorrect - a.incorrect)
   const checked = topics.filter(topic => topic.mastered).length

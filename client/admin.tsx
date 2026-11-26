@@ -1,23 +1,56 @@
 import { useEffect, useState } from 'react'
-import { CoursePicker } from './course-picker.jsx'
+import type { Dispatch, SetStateAction } from 'react'
+import type { Account, Api, AttemptSummary, Course, ExamSummary, Question } from './api'
+import { errorMessage } from './api'
+import { CoursePicker } from './course-picker'
+
+type AccountUpdate = Pick<Account, 'role' | 'disabled'>
+
+interface AdminAttempt extends AttemptSummary {
+  answered: number
+  questionCount: number
+  topics?: Record<string, { correct: number; total: number }>
+}
+
+interface UserDetailsData extends Account {
+  attempts: AdminAttempt[]
+}
+
+interface AdminTest extends ExamSummary {
+  access: 'open' | 'assigned'
+  archived: boolean
+}
+
+interface QuestionDraft extends Pick<Question, 'prompt' | 'options'> {
+  passage?: string | null
+  topics?: string[]
+  topic?: string
+  correct: number[]
+}
+
+interface TestDraft extends Pick<AdminTest, 'title' | 'courseId' | 'description' | 'access'> {
+  id?: string
+  duration: number | ''
+  questions: QuestionDraft[]
+}
 
 const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' })
-const json = (method, body) => ({
+const json = (method: 'PATCH' | 'POST' | 'PUT', body: unknown): RequestInit => ({
   method,
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify(body),
 })
-const userPath = id => `/admin/users/${encodeURIComponent(id)}`
-const testPath = id => `/admin/tests/${encodeURIComponent(id)}`
-const emptyQuestion = () => ({ prompt: '', topics: [''], passage: '', options: ['', '', '', ''], correct: [] })
-const emptyTest = () => ({ title: '', courseId: '', description: '', duration: 7200, access: 'assigned', questions: [emptyQuestion()] })
+const userPath = (id: string) => `/admin/users/${encodeURIComponent(id)}`
+const testPath = (id: string) => `/admin/tests/${encodeURIComponent(id)}`
+const emptyQuestion = (): QuestionDraft => ({ prompt: '', topics: [''], passage: '', options: ['', '', '', ''], correct: [] })
+const emptyTest = (): TestDraft => ({ title: '', courseId: '', description: '', duration: 7200, access: 'assigned', questions: [emptyQuestion()] })
 
-export function Admin({ api, account }) {
-  const [users, setUsers] = useState(null)
-  const [tests, setTests] = useState(null)
-  const [courses, setCourses] = useState(null)
-  const [person, setPerson] = useState(null)
-  const [draft, setDraft] = useState(null)
+export function Admin({ api, account }: { api: Api; account: Account }) {
+  const [users, setUsers] = useState<Account[] | null>(null)
+  const [tests, setTests] = useState<AdminTest[] | null>(null)
+  const [courses, setCourses] = useState<Course[] | null>(null)
+  const [person, setPerson] = useState<UserDetailsData | null>(null)
+  const [draft, setDraft] = useState<TestDraft | null>(null)
   const [section, setSection] = useState('users')
   const [busy, setBusy] = useState(true)
   const [error, setError] = useState('')
@@ -25,60 +58,63 @@ export function Admin({ api, account }) {
 
   useEffect(() => {
     let current = true
-    Promise.all([api('/admin/users'), api('/admin/tests'), api('/admin/courses')]).then(([people, exams, catalog]) => {
+    Promise.all([api<Account[]>('/admin/users'), api<AdminTest[]>('/admin/tests'), api<Course[]>('/admin/courses')]).then(([people, exams, catalog]) => {
       if (current) {
         setUsers(people)
         setTests(exams)
         setCourses(catalog)
       }
     }).catch(err => {
-      if (current) setError(err.message)
+      if (current) setError(errorMessage(err))
     }).finally(() => {
       if (current) setBusy(false)
     })
     return () => { current = false }
   }, [api])
 
-  async function run(task) {
+  async function run(task: () => Promise<void>) {
     setError('')
     setNotice('')
     setBusy(true)
     try {
       await task()
     } catch (err) {
-      setError(err.message)
+      setError(errorMessage(err))
     } finally {
       setBusy(false)
     }
   }
 
-  function replaceUser(updated) {
-    setUsers(current => current.map(user => user.id === updated.id ? updated : user))
-    setPerson(current => ({ ...current, ...updated }))
+  function replaceUser(updated: Account) {
+    setUsers(current => current?.map(user => user.id === updated.id ? updated : user) ?? null)
+    setPerson(current => current?.id === updated.id ? { ...current, ...updated } : current)
   }
 
-  function openUser(id) {
+  function openUser(id: string) {
     setPerson(null)
-    return run(async () => setPerson(await api(userPath(id))))
+    return run(async () => setPerson(await api<UserDetailsData>(userPath(id))))
   }
 
-  function saveUser(values) {
+  function saveUser(values: AccountUpdate) {
+    if (!person) return
     return run(async () => {
-      const updated = await api(userPath(person.id), json('PATCH', values))
+      const updated = await api<Account>(userPath(person.id), json('PATCH', values))
       replaceUser(updated)
       setNotice('Account updated.')
     })
   }
 
-  function assign(testId, assigned) {
+  function assign(testId: string, assigned: boolean) {
+    if (!person) return
     return run(async () => {
-      const updated = await api(`${userPath(person.id)}/assignments/${testId}`, json('PUT', { assigned }))
+      const updated = await api<Account>(`${userPath(person.id)}/assignments/${testId}`, json('PUT', { assigned }))
       replaceUser(updated)
       setNotice(assigned ? 'Test assigned.' : 'Assignment removed.')
     })
   }
 
   function saveTest() {
+    if (!draft) return
     return run(async () => {
       const questions = draft.questions.map(question => ({
         ...question,
@@ -86,17 +122,17 @@ export function Admin({ api, account }) {
       }))
       await api(draft.id ? testPath(draft.id) : '/admin/tests', json(draft.id ? 'PUT' : 'POST', { ...draft, questions }))
       setDraft(null)
-      setTests(await api('/admin/tests'))
+      setTests(await api<AdminTest[]>('/admin/tests'))
       setNotice('Test saved.')
     })
   }
 
-  function archive(test) {
+  function archive(test: AdminTest) {
     if (!window.confirm(`Archive “${test.title}”? Students with an active attempt can still finish it.`)) return
     return run(async () => {
-      await api(testPath(test.id), { method: 'DELETE' })
+      await api<null>(testPath(test.id), { method: 'DELETE' })
       setDraft(current => current?.id === test.id ? null : current)
-      setTests(await api('/admin/tests'))
+      setTests(await api<AdminTest[]>('/admin/tests'))
       setNotice('Test archived.')
     })
   }
@@ -136,18 +172,26 @@ export function Admin({ api, account }) {
                 <span>{test.courseName || 'Uncategorized'} · {test.questionCount} questions · {test.archived ? 'Archived' : test.access === 'open' ? 'Open to everyone' : 'Assignment only'}</span>
               </div>
               {!test.archived && <div className="admin-actions">
-                <button className="secondary" disabled={busy} onClick={() => run(async () => setDraft(await api(testPath(test.id))))}>Edit</button>
+                <button className="secondary" disabled={busy} onClick={() => run(async () => setDraft(await api<TestDraft>(testPath(test.id))))}>Edit</button>
                 <button className="quiet" disabled={busy} onClick={() => archive(test)}>Archive</button>
               </div>}
             </li>)}</ul>
           </section>
-          {draft && <TestEditor key={draft.id ?? 'new'} draft={draft} setDraft={setDraft} courses={courses} busy={busy} onSave={saveTest} />}
+          {draft && courses && <TestEditor key={draft.id ?? 'new'} draft={draft} setDraft={setDraft} courses={courses} busy={busy} onSave={saveTest} />}
         </div>)}
     </div>
   )
 }
 
-function UserDetails({ person, account, tests, busy, onSave, onAssign, onRefresh }) {
+function UserDetails({ person, account, tests, busy, onSave, onAssign, onRefresh }: {
+  person: UserDetailsData
+  account: Account
+  tests: AdminTest[]
+  busy: boolean
+  onSave: (values: AccountUpdate) => void
+  onAssign: (testId: string, assigned: boolean) => void
+  onRefresh: () => void
+}) {
   const [role, setRole] = useState(person.role)
   const [disabled, setDisabled] = useState(person.disabled)
   const [selection, setSelection] = useState('')
@@ -161,7 +205,7 @@ function UserDetails({ person, account, tests, busy, onSave, onAssign, onRefresh
       <p className="note admin-id">{person.id}</p>
       <form onSubmit={event => { event.preventDefault(); onSave({ role, disabled }) }}>
         <fieldset disabled={busy || protectedAccount} className="admin-actions">
-          <label>Role<select value={role} onChange={event => setRole(event.target.value)}>
+          <label>Role<select value={role} onChange={event => setRole(event.target.value === 'admin' ? 'admin' : 'student')}>
             <option value="student">Student</option><option value="admin">Admin</option>
           </select></label>
           <label>Status<select value={disabled ? 'disabled' : 'active'} onChange={event => setDisabled(event.target.value === 'disabled')}>
@@ -208,17 +252,23 @@ function UserDetails({ person, account, tests, busy, onSave, onAssign, onRefresh
   )
 }
 
-function TestEditor({ draft, setDraft, courses, busy, onSave }) {
+function TestEditor({ draft, setDraft, courses, busy, onSave }: {
+  draft: TestDraft
+  setDraft: Dispatch<SetStateAction<TestDraft | null>>
+  courses: Course[]
+  busy: boolean
+  onSave: () => void
+}) {
   const [questionIndex, setQuestionIndex] = useState(0)
   const index = Math.min(questionIndex, draft.questions.length - 1)
   const question = draft.questions[index]
-  const change = fields => setDraft(current => ({ ...current, ...fields }))
-  const editQuestion = fields => setDraft(current => ({
+  const change = (fields: Partial<TestDraft>) => setDraft(current => current && ({ ...current, ...fields }))
+  const editQuestion = (fields: Partial<QuestionDraft>) => setDraft(current => current && ({
     ...current,
     questions: current.questions.map((item, i) => i === index ? { ...item, ...fields } : item),
   }))
 
-  function toggleCorrect(option) {
+  function toggleCorrect(option: number) {
     const correct = question.correct.includes(option) ? question.correct.filter(value => value !== option) : [...question.correct, option]
     if (correct.length <= 2) editQuestion({ correct })
   }
@@ -233,7 +283,7 @@ function TestEditor({ draft, setDraft, courses, busy, onSave }) {
         <div className="admin-actions">
           <label>Time limit (seconds)<input type="number" required min="1" max="86400" value={draft.duration}
             onChange={event => change({ duration: event.target.value === '' ? '' : Number(event.target.value) })} /></label>
-          <label>Availability<select value={draft.access} onChange={event => change({ access: event.target.value })}>
+          <label>Availability<select value={draft.access} onChange={event => change({ access: event.target.value === 'open' ? 'open' : 'assigned' })}>
             <option value="assigned">Assigned users</option><option value="open">All users</option>
           </select></label>
         </div>
