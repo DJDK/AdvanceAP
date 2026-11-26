@@ -1,8 +1,3 @@
-comtaler@Daniel-Surface-Pro-7:~/code/ap-test$ docker run -d --name ap-practice-mongo \
-  -p 127.0.0.1:27017:27017 \
-  -v ap-practice-mongo-data:/data/db \
-  mongodb/mongodb-community-server:8.0-ubi8
-permission denied while trying to connect to the docker API at unix:///var/run/docker.sock
 # AP Practice
 
 A local React and Vite frontend, a NestJS 11 REST API on Node.js and TypeScript 7.0, and a MongoDB attempt store. Students sign in through Auth0 Universal Login.
