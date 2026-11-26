@@ -1,0 +1,35 @@
+{
+  "name": "ap-exam-simulator",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "dev": "vite --strictPort",
+    "api": "npm run build:server && node --enable-source-maps --env-file=.env server/.build/main.js",
+    "build": "npm run build:server && vite build",
+    "test": "npm run build:server && node --test \"server/.build/exams/*.test.js\"",
+    "build:server": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@auth0/auth0-react": "^2.5.0",
+    "@nestjs/common": "^11.2.11",
+    "@nestjs/core": "^11.2.11",
+    "@nestjs/platform-express": "^11.2.11",
+    "express": "^5.1.0",
+    "express-oauth2-jwt-bearer": "^1.7.2",
+    "mongodb": "^6.18.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^22.20.5",
+    "typescript": "~7.0.2",
+    "vite": "^7.1.0"
+  }
+}
